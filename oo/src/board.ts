@@ -178,6 +178,9 @@ export class Board<T> {
 
                 if (matchPositionsBuffer.length >= 3) {
                     results = results.concat(matchPositionsBuffer);
+                    if (nextColPointer < this.board[i].length) {
+                        j = nextColPointer;
+                    }
                 }
             }
         }
