@@ -15,15 +15,13 @@ export type BoardEvent<T> = {
     match?: Match<T>;
 };
 
-export type BoardListener<T> = {
-    onEvent: (event: BoardEvent<T>) => void;
-};
+export type BoardListener<T> = (event: BoardEvent<T>) => void;
 
 export class Board<T> {
     private listeners: BoardListener<T>[] = [];
     private board: T[][];
 
-    constructor(rows: number, cols: number, generator: Generator<T>) {
+    constructor(generator: Generator<T>, cols: number, rows: number) {
         this.board = [];
         for (let i = 0; i < rows; i++) {
             this.board.push([] as T[]);
@@ -38,11 +36,27 @@ export class Board<T> {
     }
 
     piece(p: Position): T | undefined {
+        if (p.row<0 || p.col<0) return undefined;
+        if (p.row>=this.board.length) return undefined;
+        if (p.col>=this.board[p.row].length) return undefined;
         return this.board[p.row][p.col] ?? undefined;
     }
 
+
+
     canMove(first: Position, second: Position): boolean {
-        return this.hasMatch<T>(this, second, this.piece(first));
+        if (second.row<0 || second.col<0) return false;
+        if (second.row>=this.board.length) return false;
+        if (second.col>=this.board[second.row].length) return false;
+        if (first.row<0 || first.col<0) return false;
+        if (first.row>=this.board.length) return false;
+        if (first.col>=this.board[first.row].length) return false;
+        if (first.row===second.row && first.col === second.col) return false;
+        if ((Math.abs(first.row - second.row)>=1) && (Math.abs(first.col - second.col)>=1)) return false; 
+        this.swapPostion(first, second);
+        const result =  this.hasMatch<T>(this, second, this.piece(first)) || this.hasMatch<T>(this, first, this.piece(second));
+        
+        return result;
     }
 
     move(first: Position, second: Position) {
@@ -61,7 +75,8 @@ export class Board<T> {
             return false;
         }
 
-        let matches = 0;
+
+        let matches = 1;
         // Check upwards
         const upCheckStartingRow = this.isOutOfBounds({
             row: fromPosition.row - 1,
@@ -95,6 +110,7 @@ export class Board<T> {
         }
 
         // Check left
+        matches = 1;
         const leftCheckStartingCol = this.isOutOfBounds({
             row: fromPosition.row,
             col: fromPosition.col - 1,
@@ -186,6 +202,26 @@ export class Board<T> {
         }
         return results;
     }
+
+    positions(): Position[] {
+        let results = [] as Position[];
+        for (let i = 0; i < this.board.length; i++) {
+            for (let j = 0; j < this.board[i].length; j++) {
+                results.push({ row: i, col: j });
+            }
+        }
+        return results;
+    }
+
+    get width() {
+        return this.board[0].length;
+    }
+
+    get height() {
+        return this.board.length;
+    }
+
+
 
     clearMatches<T>() {}
     toString(): string {
