@@ -79,10 +79,48 @@ export function move<T>(
     first: Position,
     second: Position
 ): MoveResult<T> {
+    if (!canMove(board, first, second)) {
+        return {
+            board,
+            effects: [],
+        };
+    }
+
     let boardAfterMove = swap(board, first, second);
+    let firstPositionHorizontalMatchesEffect = getHorizontalMatches(
+        boardAfterMove,
+        first.row
+    ).map((match) => {
+        return { kind: "Match" as "Match", match };
+    });
+    let firstPositionVerticalMatchesEffect = getVerticalMatches(
+        boardAfterMove,
+        first.col
+    ).map((match) => {
+        return { kind: "Match" as "Match", match };
+    });
+
+    let secondPositionHorizontalMatchesEffect = getHorizontalMatches(
+        boardAfterMove,
+        second.row
+    ).map((match) => {
+        return { kind: "Match" as "Match", match };
+    });
+    let secondPositionVerticalMatchesEffect = getVerticalMatches(
+        boardAfterMove,
+        first.col
+    ).map((match) => {
+        return { kind: "Match" as "Match", match };
+    });
+
     return {
         board: boardAfterMove,
-        effects: [],
+        effects: [
+            ...firstPositionHorizontalMatchesEffect,
+            ...secondPositionHorizontalMatchesEffect,
+            ...firstPositionVerticalMatchesEffect,
+            ...secondPositionVerticalMatchesEffect,
+        ],
     };
 }
 
@@ -317,13 +355,15 @@ function isDiagonalMove(first: Position, second: Position): boolean {
 }
 
 function swap<T>(board: Board<T>, first: Position, second: Position): Board<T> {
+    const firstPiece = piece(board, first);
+    const secondPiece = piece(board, second);
     return {
         state: board.state.map((row, rowIdx) =>
             row.map((col, colIdx) => {
                 if (indexesMatchesPosition(first, rowIdx, colIdx)) {
-                    return piece(board, second);
+                    return secondPiece;
                 } else if (indexesMatchesPosition(second, rowIdx, colIdx)) {
-                    return piece(board, first);
+                    return firstPiece;
                 } else {
                     return col;
                 }
@@ -340,4 +380,114 @@ function indexesMatchesPosition(
     colIndex: number
 ): boolean {
     return rowIndex === p.row && colIndex === p.col;
+}
+
+function getHorizontalMatches<T>(board: Board<T>, row: number): Match<T>[] {
+    function go(
+        board: Board<T>,
+        p: Position,
+        pieceToMatch: T,
+        buffer: Position[],
+        allMatches: Match<T>[]
+    ) {
+        if (isOutsideBoard(board, p)) {
+            if (buffer.length >= 3) {
+                allMatches = allMatches.concat([
+                    { matched: pieceToMatch, positions: buffer },
+                ]);
+            }
+            return allMatches;
+        }
+
+        let nextPosition = { row: row, col: p.col + 1 };
+        if (piece(board, p) === pieceToMatch) {
+            return go(
+                board,
+                nextPosition,
+                pieceToMatch,
+                buffer.concat([p]),
+                allMatches
+            );
+        } else {
+            const nextType = piece(board, nextPosition);
+            if (buffer.length >= 3) {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches.concat([
+                        { matched: pieceToMatch, positions: buffer },
+                    ])
+                );
+            } else {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches
+                );
+            }
+        }
+    }
+
+    const firstPosition = { row, col: 0 };
+    const firstPieceType = piece(board, firstPosition);
+    return go(board, firstPosition, firstPieceType, [], []);
+}
+
+function getVerticalMatches<T>(board: Board<T>, col: number): Match<T>[] {
+    function go(
+        board: Board<T>,
+        p: Position,
+        pieceToMatch: T,
+        buffer: Position[],
+        allMatches: Match<T>[]
+    ) {
+        if (isOutsideBoard(board, p)) {
+            if (buffer.length >= 3) {
+                allMatches = allMatches.concat([
+                    { matched: pieceToMatch, positions: buffer },
+                ]);
+            }
+            return allMatches;
+        }
+
+        let nextPosition = { row: p.row + 1, col };
+        if (piece(board, p) === pieceToMatch) {
+            return go(
+                board,
+                nextPosition,
+                pieceToMatch,
+                buffer.concat([p]),
+                allMatches
+            );
+        } else {
+            const nextType = piece(board, nextPosition);
+            if (buffer.length >= 3) {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches.concat([
+                        { matched: pieceToMatch, positions: buffer },
+                    ])
+                );
+            } else {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches
+                );
+            }
+        }
+    }
+
+    const firstPosition = { row: 0, col };
+    const firstPieceType = piece(board, firstPosition);
+    return go(board, firstPosition, firstPieceType, [], []);
 }
