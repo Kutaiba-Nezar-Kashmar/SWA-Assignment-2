@@ -42,20 +42,35 @@ export class Board<T> {
         return this.board[p.row][p.col] ?? undefined;
     }
 
-
+    setPiece(p: Position, value: T): void {
+        if (p.row >= 0 && p.col >= 0 && p.row < this.board.length && p.col < this.board[p.row].length) {
+            this.board[p.row][p.col] = value;
+        }
+    }
 
     canMove(first: Position, second: Position): boolean {
-        if (second.row<0 || second.col<0) return false;
-        if (second.row>=this.board.length) return false;
-        if (second.col>=this.board[second.row].length) return false;
-        if (first.row<0 || first.col<0) return false;
-        if (first.row>=this.board.length) return false;
-        if (first.col>=this.board[first.row].length) return false;
-        if (first.row===second.row && first.col === second.col) return false;
+        if (second.row<0 || second.col<0 || first.row<0 || first.col<0) return false;
+        if (first.row>=this.board.length ||  first.col>=this.board[first.row].length ) return false;
+        if (second.row>=this.board.length || second.col>=this.board[second.row].length) return false;
+        if (first.row === second.row && first.col === second.col) return false;
+        if (!(first.row === second.row || first.col === second.col))
         if ((Math.abs(first.row - second.row)>=1) && (Math.abs(first.col - second.col)>=1)) return false; 
-        this.swapPostion(first, second);
+
+        // Save the original positions
+        const originalFirstPiece = this.piece(first);
+        const originalSecondPiece = this.piece(second);
+
+        // Temporarily swap positions
+        this.setPiece(first, originalSecondPiece);
+        this.setPiece(second, originalFirstPiece);
+
+        
         const result =  this.hasMatch<T>(this, second, this.piece(first)) || this.hasMatch<T>(this, first, this.piece(second));
         
+        // Swap back to the original positions
+        this.setPiece(first, originalFirstPiece);
+        this.setPiece(second, originalSecondPiece);
+
         return result;
     }
 
