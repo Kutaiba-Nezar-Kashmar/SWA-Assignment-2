@@ -20,9 +20,11 @@ export type BoardListener<T> = (event: BoardEvent<T>) => void;
 export class Board<T> {
     private listeners: BoardListener<T>[] = [];
     private board: T[][];
+    private generator: Generator<T>;
 
     constructor(generator: Generator<T>, cols: number, rows: number) {
         this.board = [];
+        this.generator = generator;
         for (let i = 0; i < rows; i++) {
             this.board.push([] as T[]);
             for (let j = 0; j < cols; j++) {
@@ -65,7 +67,7 @@ export class Board<T> {
         this.setPiece(second, originalFirstPiece);
 
         
-        const result =  this.hasMatch<T>(this, second, this.piece(first)) || this.hasMatch<T>(this, first, this.piece(second));
+        const result =  this.hasMatch(second) || this.hasMatch(first);
         
         // Swap back to the original positions
         this.setPiece(first, originalFirstPiece);
@@ -78,97 +80,107 @@ export class Board<T> {
         if (!this.canMove(first, second)) {
             return;
         }
+
         this.swapPostion(first, second);
+        let allMatches = this.getAllMatches();
+
+        while (allMatches.length > 0){
+            allMatches.map(match => {
+                return {kind:"Match" as "Match", match}
+            }).forEach(matchEvent => {
+                this.listeners.forEach(listener =>listener(matchEvent));
+                this.clearMatches([matchEvent.match]);
+                this.movePiecesDown();
+                let hasRefilled = this.refillEmptyPostions();
+                if(hasRefilled){
+                    this.listeners.forEach(lis => lis({kind: "Refill" as "Refill"}));
+                }
+            });
+            
+            console.log(allMatches);
+            allMatches = this.getAllMatches();
+        }
     }
 
-    hasMatch<T>(
-        board: Board<T>,
-        fromPosition: Position,
-        value: T | undefined
-    ): boolean {
-        if (value === undefined) {
+    gameLoop(){
+        let allMatches = this.getAllMatches();
+        while (allMatches.length > 0){
+            allMatches.forEach(match => {
+                let matchEvent = {kind: "Match" as "Match", match};
+                this.listeners.forEach(listener => listener(matchEvent))
+                this.clearMatches([match]);
+                this.movePiecesDown();
+                let hasRefilled = this.refillEmptyPostions();
+                if(hasRefilled){
+                    this.listeners.forEach(lis => lis({kind: "Refill" as "Refill"}));
+                }
+            })
+            allMatches = this.getAllMatches();
+        }
+    }
+
+    movePiecesDown(){
+        for (let i = 0; i < this.height; i++){
+            for (let j = 0; j < this.width; j++){
+                let finished = !this.movePieceDown({row: i, col: j});
+                while(!finished){
+                    const nextPosition = {row: i+1, col: j};
+                    finished = !this.movePieceDown(nextPosition);
+                }
+            }
+        }
+    }
+
+    getFirstUndfinedRow(){
+        
+    }
+
+    movePieceDown(p: Position): boolean{
+        const piece = this.piece(p);
+        if (this.isOutsideBoard(p) || piece === undefined || p.row === this.height - 1){
             return false;
         }
 
-
-        let matches = 1;
-        // Check upwards
-        const upCheckStartingRow = this.isOutOfBounds({
-            row: fromPosition.row - 1,
-            col: fromPosition.col,
-        })
-            ? fromPosition.row
-            : fromPosition.row - 1;
-        for (let i = upCheckStartingRow; i >= 0; i--) {
-            if (board.piece({ row: i, col: fromPosition.col }) === value) {
-                matches++;
-                if (matches === 3) {
-                    return true;
-                }
-            }
+        const down = {row: p.row+1, col: p.col};
+        if (this.piece(down) !== undefined){
+            return false;
         }
 
-        // Check downward
-        const downCheckStaringRow = this.isOutOfBounds({
-            row: fromPosition.row + 1,
-            col: fromPosition.col,
-        })
-            ? fromPosition.row
-            : fromPosition.row - 1;
-        for (let i = downCheckStaringRow; i < this.board.length; i++) {
-            if (board.piece({ row: i, col: fromPosition.col }) === value) {
-                matches++;
-                if (matches === 3) {
-                    return true;
-                }
-            }
-        }
-
-        // Check left
-        matches = 1;
-        const leftCheckStartingCol = this.isOutOfBounds({
-            row: fromPosition.row,
-            col: fromPosition.col - 1,
-        })
-            ? fromPosition.col
-            : fromPosition.col - 1;
-        for (let i = fromPosition.col - 1; i >= 0; i--) {
-            if (board.piece({ row: fromPosition.row, col: i }) === value) {
-                matches++;
-                if (matches === 3) {
-                    return true;
-                }
-            }
-        }
-
-        // Check right
-        const rightCheckStartingCol = this.isOutOfBounds({
-            row: fromPosition.row,
-            col: fromPosition.col + 1,
-        })
-            ? fromPosition.col
-            : fromPosition.col + 1;
-        for (let i = fromPosition.col + 1; i < this.board.length; i++) {
-            if (board.piece({ row: fromPosition.row, col: i }) === value) {
-                matches++;
-                if (matches === 3) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        this.swapPostion(p, down);
+        return true;
     }
 
-    isOutOfBounds(position: Position): boolean {
-        if (position.col < 0 || position.col > this.board[0].length - 1) {
-            return true;
+    refillEmptyPostions(): boolean{
+        let refillCount = 0;
+        for (let i = 0; i < this.height; i++){
+            for (let j = 0; j < this.width; j++){
+                const  position = {row: i, col: j};
+                if(this.piece(position) === undefined){
+                    refillCount ++;
+                    const newPiece = this.generator.next();
+                    this.setPiece(position, newPiece);
+                }
+            }
         }
+        return refillCount > 0;
+    }
+    
 
-        if (position.row < 0 || position.row > this.board.length - 1) {
-            return true;
+     getAllMatches() {
+        let allMatches = [] as Match<T>[];
+        for (let i = 0; i < this.height; i++) {
+            for (let j = 0; j < this.width; j++) {
+                allMatches = [...allMatches, ...this.getVerticalMatches(j)];
+                allMatches = [...allMatches, ...this.getHorizontalMatches(i)];
+            }
         }
+        return allMatches;
+    }
 
-        return false;
+    hasMatch(
+        fromPosition: Position,
+    ): boolean {
+        return ( 1+ this.getAboveConsecutiveMatches(fromPosition) + this.getBelowConsecutiveMatches(fromPosition) >= 3) || (1+this.getLeftConsecutiveMatches(fromPosition) + this.getRightConsecutiveMatches(fromPosition) >= 3)
     }
 
     swapPostion(first: Position, second: Position) {
@@ -177,46 +189,6 @@ export class Board<T> {
         this.board[second.row][second.col] = temp;
     }
 
-    getHorizontalPositionsToClear(): Position[] {
-        let results = [] as Position[];
-        for (let i = 0; i < this.board.length; i++) {
-            for (let j = 0; j < this.board[i].length; j++) {
-                if (this.piece({ row: i, col: j }) === undefined) {
-                    continue;
-                }
-
-                let endOfMatch = false;
-                let pieceToMatch = this.piece({ row: i, col: j });
-                // NOTE: (mibui 2023-09-28) Keeps track of which pieces we have matched in this sequence so far
-                //                          We don't add directly to results, since we want to ensure that only
-                //                          horizontal sequences of 3+ will get cleared.
-                let matchPositionsBuffer = [{ row: i, col: j }] as Position[];
-                let nextColPointer = j + 1;
-                while (!endOfMatch && nextColPointer < this.board[i].length) {
-                    const nextPiece = this.piece({
-                        row: i,
-                        col: nextColPointer,
-                    });
-
-                    if (nextPiece === undefined || nextPiece !== pieceToMatch) {
-                        endOfMatch = true;
-                        break;
-                    }
-
-                    matchPositionsBuffer.push({ row: i, col: nextColPointer });
-                    nextColPointer++;
-                }
-
-                if (matchPositionsBuffer.length >= 3) {
-                    results = results.concat(matchPositionsBuffer);
-                    if (nextColPointer < this.board[i].length) {
-                        j = nextColPointer;
-                    }
-                }
-            }
-        }
-        return results;
-    }
 
     positions(): Position[] {
         let results = [] as Position[];
@@ -236,10 +208,307 @@ export class Board<T> {
         return this.board.length;
     }
 
+    isOutsideBoard(
+        p: Position
+    ): boolean {
+        return (
+            p.col >= this.width || p.row >= this.height || p.col < 0 || p.row < 0
+        );
+    }
 
+    /**
+ * Recursively finds the amount of matching pieces to the left of position, the piece itself exclusive.
+ * E.g. given the state:
+ * board.state =  [
+ *  [1, 1, 1]
+ * ]
+ * getLeftConsecutiveMatches(board, {row: 0, col: 2})
+ * will return 2, since there are 2 matching "1" to the left of pos (0, 2)
+ */
+ getLeftConsecutiveMatches(
+    position: Position
+): number {
+    function go(
+        board: Board<T>,
+        pieceToMatch: T,
+        positionToConsider: Position,
+        matches: number
+    ): number {
+        if (
+            board.isOutsideBoard(positionToConsider) ||
+            board.piece(positionToConsider) !== pieceToMatch
+        ) {
+            return matches;
+        } else {
+            return go(
+                board,
+                pieceToMatch,
+                {
+                    row: positionToConsider.row,
+                    col: positionToConsider.col - 1,
+                },
+                matches + 1
+            );
+        }
+    }
 
-    clearMatches<T>() {}
-    toString(): string {
-        return JSON.stringify(this.board, null, 4);
+    return go(this,
+        this.piece(position),
+        { row: position.row, col: position.col - 1 },
+        0
+    );
+}
+
+/**
+ * Recursively finds the amount of matching pieces to the left of position, the piece itself exclusive.
+ * E.g. given the state:
+ * board.state =  [
+ *  [1, 1, 1]
+ * ]
+ * getRightConsecutiveMatches(board, {row: 0, col: 0})
+ * will return 2, since there are 2 matching "1" to the right of pos (0, 0)
+ */
+ getRightConsecutiveMatches(
+    position: Position
+): number {
+    function go(
+        board: Board<T>,
+        pieceToMatch: T,
+        positionToConsider: Position,
+        matches: number
+    ): number {
+        if (
+            board.isOutsideBoard(positionToConsider) ||
+            board.piece(positionToConsider) !== pieceToMatch
+        ) {
+            return matches;
+        } else {
+            return go(
+                board,
+                pieceToMatch,
+                {
+                    row: positionToConsider.row,
+                    col: positionToConsider.col + 1,
+                },
+                matches + 1
+            );
+        }
+    }
+
+    return go(
+        this,
+        this.piece(position),
+        { row: position.row, col: position.col + 1 },
+        0
+    );
+}
+
+/**
+ * Recursively finds the amount of matching pieces above the position, the piece itself exclusive.
+ * E.g. given the state:
+ * board.state =  [
+ *  [1, 0 ,0],
+ *  [1, 1, 1],
+ *  [1, 0, 1],
+ * ]
+ * getAboveConsecutiveMatches(board, {row: 2, col: 0})
+ * will return 2, since there are 2 matching "1" above of pos (2, 0)
+ */
+getAboveConsecutiveMatches(
+    position: Position
+): number {
+    function go(
+        board: Board<T>,
+        pieceToMatch: T,
+        positionToConsider: Position,
+        matches: number
+    ): number {
+        if (
+            board.isOutsideBoard(positionToConsider) ||
+            board.piece(positionToConsider) !== pieceToMatch
+        ) {
+            return matches;
+        } else {
+            return go(
+                board,
+                pieceToMatch,
+                {
+                    row: positionToConsider.row - 1,
+                    col: positionToConsider.col,
+                },
+                matches + 1
+            );
+        }
+    }
+
+    return go(this,
+        this.piece(position),
+        { row: position.row - 1, col: position.col },
+        0
+    );
+}
+
+/**
+ * Recursively finds the amount of matching pieces below the position, the piece itself exclusive.
+ * E.g. given the state:
+ * board.state =  [
+ *  [1, 0 ,0],
+ *  [1, 1, 1],
+ *  [1, 0, 1],
+ * ]
+ * getBelowConsecutiveMatches(board, {row: 0, col: 0})
+ * will return 2, since there are 2 matching "1" below of pos (0, 0)
+ */
+getBelowConsecutiveMatches(
+    position: Position
+): number {
+    function go(
+        board: Board<T>,
+        pieceToMatch: T,
+        positionToConsider: Position,
+        matches: number
+    ): number {
+        if (
+            board.isOutsideBoard(positionToConsider) ||
+            board.piece(positionToConsider) !== pieceToMatch
+        ) {
+            return matches;
+        } else {
+            return go(
+                board,
+                pieceToMatch,
+                {
+                    row: positionToConsider.row + 1,
+                    col: positionToConsider.col,
+                },
+                matches + 1
+            );
+        }
+    }
+
+    return go(
+        this,
+        this.piece(position),
+        { row: position.row, col: position.col },
+        0
+    );
+}
+
+getVerticalMatches(col: number): Match<T>[] {
+    function go(
+        board: Board<T>,
+        p: Position,
+        pieceToMatch: T,
+        buffer: Position[],
+        allMatches: Match<T>[]
+    ) {
+        if (board.isOutsideBoard(p)) {
+            if (buffer.length >= 3) {
+                allMatches = allMatches.concat([
+                    { matched: pieceToMatch, positions: buffer },
+                ]);
+            }
+            return allMatches;
+        }
+
+        let nextPosition = { row: p.row + 1, col };
+        if (board.piece(p) === pieceToMatch) {
+            return go(
+                board,
+                nextPosition,
+                pieceToMatch,
+                buffer.concat([p]),
+                allMatches
+            );
+        } else {
+            const nextType = board.piece(nextPosition);
+            if (buffer.length >= 3) {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches.concat([
+                        { matched: pieceToMatch, positions: buffer },
+                    ])
+                );
+            } else {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches
+                );
+            }
+        }
+    }
+
+    const firstPosition = { row: 0, col };
+    const firstPieceType = this.piece(firstPosition);
+    return go(this, firstPosition, firstPieceType, [], []);
+}
+
+getHorizontalMatches(row: number): Match<T>[] {
+    function go(
+        board: Board<T>,
+        p: Position,
+        pieceToMatch: T,
+        buffer: Position[],
+        allMatches: Match<T>[]
+    ) {
+        if (board.isOutsideBoard(p)) {
+            if (buffer.length >= 3) {
+                allMatches = allMatches.concat([
+                    { matched: pieceToMatch, positions: buffer },
+                ]);
+            }
+            return allMatches;
+        }
+
+        let nextPosition = { row: row, col: p.col + 1 };
+        if (board.piece(p) === pieceToMatch) {
+            return go(
+                board,
+                nextPosition,
+                pieceToMatch,
+                buffer.concat([p]),
+                allMatches
+            );
+        } else {
+            const nextType = board.piece(nextPosition);
+            if (buffer.length >= 3) {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches.concat([
+                        { matched: pieceToMatch, positions: buffer },
+                    ])
+                );
+            } else {
+                return go(
+                    board,
+                    nextPosition,
+                    nextType ?? pieceToMatch,
+                    [],
+                    allMatches
+                );
+            }
+        }
+    }
+
+    const firstPosition = { row, col: 0 };
+    const firstPieceType = this.piece(firstPosition);
+    return go(this, firstPosition, firstPieceType, [], []);
+}
+
+    clearMatches(matchesToClear: Match<T>[]) {
+        matchesToClear.forEach(match => {
+            match.positions.forEach(position => {
+                this.setPiece(position, undefined);
+            })
+        })
     }
 }
