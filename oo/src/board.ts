@@ -18,8 +18,9 @@ export type BoardEvent<T> = {
 export type BoardListener<T> = (event: BoardEvent<T>) => void;
 
 export class Board<T> {
+    public board: T[][];
+    public debugNow: boolean;
     private listeners: BoardListener<T>[] = [];
-    private board: T[][];
     private generator: Generator<T>;
 
     constructor(generator: Generator<T>, cols: number, rows: number) {
@@ -28,7 +29,7 @@ export class Board<T> {
         for (let i = 0; i < rows; i++) {
             this.board.push([] as T[]);
             for (let j = 0; j < cols; j++) {
-                this.board[i].push(generator.next());
+                this.board[i][j] = generator.next();
             }
         }
         this.gameLoop();
@@ -77,8 +78,11 @@ export class Board<T> {
         if (!this.canMove(first, second)) {
             return;
         }
-        console.log("Moving");
+
         this.swapPostion(first, second);
+        if (first.col === 4) {
+            this.debugNow = true;
+        }
         this.gameLoop();
     }
 
@@ -86,20 +90,17 @@ export class Board<T> {
         let allMatches = this.getAllMatches();
         while (allMatches.length > 0) {
             allMatches.forEach((match) => {
-                if (match.matched === "D") {
-                    console.log(allMatches);
-                }
                 let matchEvent = { kind: "Match" as "Match", match };
                 this.listeners.forEach((listener) => listener(matchEvent));
-                this.clearMatches([match]);
-                this.movePiecesDown();
-                let hasRefilled = this.refillEmptyPostions();
-                if (hasRefilled) {
-                    this.listeners.forEach((lis) =>
-                        lis({ kind: "Refill" as "Refill" })
-                    );
-                }
             });
+            this.clearMatches([allMatches[0]]);
+            this.movePiecesDown();
+            let hasRefilled = this.refillEmptyPostions();
+            if (hasRefilled) {
+                this.listeners.forEach((lis) =>
+                    lis({ kind: "Refill" as "Refill" })
+                );
+            }
             allMatches = this.getAllMatches();
         }
     }
@@ -158,13 +159,14 @@ export class Board<T> {
 
     getAllMatches() {
         let allMatches = [] as Match<T>[];
+        for (let j = 0; j < this.width; j++) {
+            allMatches = [...allMatches, ...this.getVerticalMatches(j)];
+        }
+
         for (let i = 0; i < this.height; i++) {
             allMatches = [...allMatches, ...this.getHorizontalMatches(i)];
         }
 
-        for (let j = 0; j < this.width; j++) {
-            allMatches = [...allMatches, ...this.getVerticalMatches(j)];
-        }
         return allMatches;
     }
 
@@ -404,7 +406,7 @@ export class Board<T> {
             }
 
             let nextPosition = { row: p.row + 1, col };
-            if (board.piece(p) === pieceToMatch) {
+            if (board.piece(p) === pieceToMatch && pieceToMatch !== undefined) {
                 return go(
                     board,
                     nextPosition,
@@ -414,6 +416,10 @@ export class Board<T> {
                 );
             } else {
                 const nextType = board.piece(nextPosition);
+                nextPosition =
+                    nextType !== undefined && nextType !== pieceToMatch
+                        ? p
+                        : nextPosition;
                 if (buffer.length >= 3) {
                     return go(
                         board,
@@ -458,7 +464,7 @@ export class Board<T> {
                 return allMatches;
             }
 
-            let nextPosition = { row: row, col: p.col + 1 };
+            let nextPosition = { row, col: p.col + 1 };
             if (board.piece(p) === pieceToMatch) {
                 return go(
                     board,
@@ -469,10 +475,14 @@ export class Board<T> {
                 );
             } else {
                 const nextType = board.piece(nextPosition);
+                nextPosition =
+                    nextType !== undefined && nextType !== pieceToMatch
+                        ? p
+                        : nextPosition;
                 if (buffer.length >= 3) {
                     return go(
                         board,
-                        nextPosition,
+                        p,
                         nextType ?? pieceToMatch,
                         [],
                         allMatches.concat([
