@@ -116,6 +116,7 @@ export class Board<T> {
                         row: idx,
                         col: i - amountMoved,
                     });
+                    amountMoved++;
                 }
             });
         }
