@@ -1,7 +1,7 @@
 import { Board, Generator } from "./board";
 
 const createGenerator = () => {
-    let values = [3, 3, 3, 4, 5, 3, 3, 3];
+    let values = ["A", "D", "D", "D", "D", "D"];
     let index = 0;
 
     const next = () => {
@@ -13,6 +13,8 @@ const createGenerator = () => {
     return { next };
 };
 
-const board = new Board(2, 4, createGenerator());
-console.log(board.toString());
-console.log("to clear: ", board.getHorizontalPositionsToClear());
+const board = new Board(createGenerator(), 1, 5);
+
+board.debugNow = true;
+console.log((board.board = [["A", "D", "D", "D", "A"]]));
+console.log(board.getHorizontalMatches(0));
