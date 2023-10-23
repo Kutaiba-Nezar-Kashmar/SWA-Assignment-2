@@ -88,12 +88,17 @@ export class Board<T> {
 
     gameLoop() {
         let allMatches = this.getAllMatches();
+        const vis = new Map<Match<T>, boolean>();
         while (allMatches.length > 0) {
             allMatches.forEach((match) => {
-                let matchEvent = { kind: "Match" as "Match", match };
-                this.listeners.forEach((listener) => listener(matchEvent));
+                if (!vis.has(match)) {
+                    let matchEvent = { kind: "Match" as "Match", match };
+                    this.listeners.forEach((listener) => listener(matchEvent));
+                    vis.set(match, true);
+                }
             });
             this.clearMatches([allMatches[0]]);
+
             this.movePiecesDown();
             let hasRefilled = this.refillEmptyPostions();
             if (hasRefilled) {
@@ -106,23 +111,33 @@ export class Board<T> {
     }
 
     movePiecesDown() {
-        for (let i = 0; i < this.width; i++) {
-            const rowIndexes = Array.from(Array(this.height).keys()).reverse();
-            rowIndexes.forEach((idx) => {
-                let finished = !this.movePieceDown({ row: idx, col: i });
-                let amountMoved = 0;
-                while (!finished) {
-                    finished = !this.movePieceDown({
-                        row: idx,
-                        col: i - amountMoved,
-                    });
-                    amountMoved++;
+        const LEFT_MOST_COL = 0;
+        const BUTTOM_ROW = this.height - 1;
+        for (let i = LEFT_MOST_COL; i < this.width; i++) {
+            for (let j = BUTTOM_ROW; j >= 0; j--) {
+                let above = { row: j - 1, col: i } as Position;
+                let currentPiecePosition: Position = above;
+                let moved = this.movePieceDown(above);
+                if (moved) {
+                    currentPiecePosition = {
+                        row: currentPiecePosition.row + 1,
+                        col: currentPiecePosition.col,
+                    };
                 }
-            });
+                let finished = !moved;
+                while (!finished) {
+                    let moved = this.movePieceDown(currentPiecePosition);
+                    finished = !moved;
+                    if (moved) {
+                        currentPiecePosition = {
+                            row: currentPiecePosition.row + 1,
+                            col: currentPiecePosition.col,
+                        };
+                    }
+                }
+            }
         }
     }
-
-    getFirstUndfinedRow() {}
 
     movePieceDown(p: Position): boolean {
         const piece = this.piece(p);
@@ -160,12 +175,11 @@ export class Board<T> {
 
     getAllMatches() {
         let allMatches = [] as Match<T>[];
-        for (let j = 0; j < this.width; j++) {
-            allMatches = [...allMatches, ...this.getVerticalMatches(j)];
-        }
-
         for (let i = 0; i < this.height; i++) {
             allMatches = [...allMatches, ...this.getHorizontalMatches(i)];
+        }
+        for (let j = 0; j < this.width; j++) {
+            allMatches = [...allMatches, ...this.getVerticalMatches(j)];
         }
 
         return allMatches;
@@ -384,7 +398,7 @@ export class Board<T> {
         return go(
             this,
             this.piece(position),
-            { row: position.row, col: position.col },
+            { row: position.row + 1, col: position.col },
             0
         );
     }
