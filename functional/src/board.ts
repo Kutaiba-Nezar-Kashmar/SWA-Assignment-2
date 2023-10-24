@@ -342,7 +342,7 @@ function getBelowConsecutiveMatches<T>(
     return go(
         board,
         piece(board, position),
-        { row: position.row, col: position.col },
+        { row: position.row  + 1, col: position.col },
         0
     );
 }
