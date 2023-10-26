@@ -33,6 +33,12 @@ export type MoveResult<T> = {
     effects: Effect<T>[];
 };
 
+
+type movePiceResult<T> = {
+    board: Board<T>,
+    stateChanged: boolean
+}
+
 export function create<T>(
     generator: Generator<T>,
     width: number,
@@ -93,6 +99,7 @@ export function move<T>(
     ).map((match) => {
         return { kind: "Match" as "Match", match };
     });
+
     let firstPositionVerticalMatchesEffect = getVerticalMatches(
         boardAfterMove,
         first.col
@@ -111,8 +118,24 @@ export function move<T>(
         first.col
     ).map((match) => {
         return { kind: "Match" as "Match", match };
-    });
+    })
 
+    let allMatches = getAllMatches(board);
+    let refillEffect = [] as Effect<T>[];
+    while (allMatches.length > 0) {
+        clearMatches(boardAfterMove, [allMatches[0]]);
+        movePiecesDown(boardAfterMove);
+        let hasRefilled = refillEmptyPostions(boardAfterMove, generator);
+        if (hasRefilled) {
+            refillEffect = [...refillEffect, { kind: "Refill" as "Refill", board}]
+        }
+        allMatches = getAllMatches(boardAfterMove);
+
+    }
+
+
+
+    
     return {
         board: boardAfterMove,
         effects: [
@@ -120,6 +143,7 @@ export function move<T>(
             ...secondPositionHorizontalMatchesEffect,
             ...firstPositionVerticalMatchesEffect,
             ...secondPositionVerticalMatchesEffect,
+            ...refillEffect
         ],
     };
 }
@@ -490,4 +514,85 @@ function getVerticalMatches<T>(board: Board<T>, col: number): Match<T>[] {
     const firstPosition = { row: 0, col };
     const firstPieceType = piece(board, firstPosition);
     return go(board, firstPosition, firstPieceType, [], []);
+}
+
+function refillEmptyPostions<T>(board: Board<T>, generator: Generator<T>): boolean {
+    let refillCount = 0;
+        for (let i = 0; i < board.height; i++) {
+            for (let j = 0; j < board.width; j++) {
+                const position = { row: i, col: j };
+                if (piece(board, position) === undefined) {
+                    refillCount++;
+                    const newPiece = generator.next();
+                    setPiece(board, position, newPiece);
+                }
+            }
+        }
+        return refillCount > 0;
+}
+
+function clearMatches<T>(board: Board<T>, matchesToClear: Match<T>[]) {
+    matchesToClear.forEach((match) => {
+        match.positions.forEach((position) => {
+            setPiece(board, position, undefined);
+        });
+    });
+}
+
+function setPiece<T>(board: Board<T>, p: Position, value: T): void {
+    if (isOutsideBoard(board, p)) {
+        return;
+    }
+
+    board[p.row][p.col] = value;
+}
+
+function movePiecesDown<T>(board: Board<T>) {
+    for (let i = 0; i < board.width; i++) {
+        const rowIndexes = Array.from(Array(board.height).keys()).reverse();
+        rowIndexes.forEach((idx) => {
+            let finished = !movePieceDown(board, { row: idx, col: i }).stateChanged;
+            let amountMoved = 0;
+            while (!finished) {
+                finished = !movePieceDown(board, {
+                    row: idx,
+                    col: i - amountMoved,
+                }).stateChanged;
+                amountMoved++;
+            }
+        });
+    }
+}
+
+
+function movePieceDown<T>(board: Board<T>, p: Position): movePiceResult<T> {
+    const _piece = piece(board, p);
+    if (
+        isOutsideBoard(board, p) ||
+        _piece === undefined ||
+        p.row === board.height - 1
+    ) {
+        return {board, stateChanged: false};
+    }
+
+    const down = { row: p.row + 1, col: p.col };
+    if (piece(board, down) !== undefined) {
+        return {board, stateChanged: false};
+    }
+
+    let newBoard = swap(board, p, down);
+    return {board: newBoard, stateChanged: true};
+}
+
+function getAllMatches<T>(board: Board<T>) {
+    let allMatches = [] as Match<T>[];
+    for (let j = 0; j < board.width; j++) {
+        allMatches = [...allMatches, ...getVerticalMatches(board, j)];
+    }
+
+    for (let i = 0; i < board.height; i++) {
+        allMatches = [...allMatches, ...getHorizontalMatches(board, i)];
+    }
+
+    return allMatches;
 }
