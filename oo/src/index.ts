@@ -1,20 +1,37 @@
 import { Board, Generator } from "./board";
+class GeneratorFake<T> implements Generator<T> {
+    private upcoming: T[];
 
-const createGenerator = () => {
-    let values = ["A", "D", "D", "D", "D", "D"];
-    let index = 0;
+    constructor(...upcoming: T[]) {
+        this.upcoming = upcoming;
+    }
 
-    const next = () => {
-        const val = values[index];
-        index++;
-        return val;
-    };
+    prepare(...e: T[]) {
+        this.upcoming.push(...e);
+    }
 
-    return { next };
-};
+    next(): T {
+        let v = this.upcoming.shift();
+        if (v === undefined) throw new Error("Empty queue");
+        else return v;
+    }
+}
 
-const board = new Board(createGenerator(), 1, 5);
-
+const generator = new GeneratorFake<String>(
+    "D",
+    "B",
+    "A",
+    "D",
+    "B",
+    "C",
+    "B",
+    "A",
+    "B",
+    "C",
+    "B",
+    "D"
+);
+const board = new Board(generator, 3, 4);
 board.debugNow = true;
-console.log((board.board = [["A", "D", "D", "D", "A"]]));
-console.log(board.getHorizontalMatches(0));
+generator.prepare("D", "C", "B", "B", "A");
+board.move({ row: 0, col: 1 }, { row: 2, col: 1 });
