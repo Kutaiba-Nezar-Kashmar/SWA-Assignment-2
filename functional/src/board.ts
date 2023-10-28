@@ -34,6 +34,10 @@ export type MoveResult<T> = {
 };
 
 
+type RefillResult<T> = {
+    board: Board<T>;
+    hasRefilled: boolean;
+}
 type movePiceResult<T> = {
     board: Board<T>;
     stateChanged: boolean;
@@ -96,14 +100,23 @@ export function move<T>(
     let boardAfterMove = swap(board, first, second);
 
     function gameLoop(board: Board<T>, effects: Effect<T>[]): MoveResult<T>{
+        console.log("BEFORE MATCHES", board.state);
         let allMatches = getAllMatches(board);
         if(allMatches.length > 0){
             let newCleardBoard = clearMatches(board, allMatches);
-            let boardAfterMoved = movePiecesDown(board);
-            let refilledBoard = refillEmptyPostions(board, generator);
-            return gameLoop(refilledBoard.board, [...effects, ...allMatches.flatMap((m) => {
-                return { kind: "Match" as "Match",  match: m}
-            }), refilledBoard])
+            let boardAfterMoved = movePiecesDown(newCleardBoard);
+            let refillResult = refillEmptyPostions(boardAfterMoved, generator);
+
+            if (refillResult.hasRefilled){
+                console.log("REFILLED", refillResult.board.state)
+                return gameLoop(refillResult.board, [...effects, ...allMatches.flatMap((m) => {
+                    return { kind: "Match" as "Match",  match: m}
+                }), {kind: "Refill" as "Refill", board: refillResult.board}])
+            }else{
+                return gameLoop(refillResult.board, [...effects, ...allMatches.flatMap((m) => {
+                    return { kind: "Match" as "Match",  match: m}
+                })])
+            }
         }else{
             return {board, effects}
         }
@@ -386,8 +399,8 @@ function getHorizontalMatches<T>(board: Board<T>, row: number): Match<T>[] {
             return allMatches;
         }
 
-        let nextPosition = { row: row, col: p.col + 1 };
-        if (piece(board, p) === pieceToMatch) {
+        let nextPosition = { row, col: p.col + 1 };
+        if (piece(board, p) === pieceToMatch && pieceToMatch !== undefined) {
             return go(
                 board,
                 nextPosition,
@@ -397,10 +410,14 @@ function getHorizontalMatches<T>(board: Board<T>, row: number): Match<T>[] {
             );
         } else {
             const nextType = piece(board, nextPosition);
+            nextPosition =
+                nextType !== undefined && nextType !== pieceToMatch
+                    ? p
+                    : nextPosition;
             if (buffer.length >= 3) {
                 return go(
                     board,
-                    nextPosition,
+                    p,
                     nextType ?? pieceToMatch,
                     [],
                     allMatches.concat([
@@ -442,7 +459,7 @@ function getVerticalMatches<T>(board: Board<T>, col: number): Match<T>[] {
         }
 
         let nextPosition = { row: p.row + 1, col };
-        if (piece(board, p) === pieceToMatch) {
+        if (piece(board, p) === pieceToMatch && pieceToMatch !== undefined) {
             return go(
                 board,
                 nextPosition,
@@ -452,6 +469,10 @@ function getVerticalMatches<T>(board: Board<T>, col: number): Match<T>[] {
             );
         } else {
             const nextType = piece(board, nextPosition);
+            nextPosition =
+                nextType !== undefined && nextType !== pieceToMatch
+                    ? p
+                    : nextPosition;
             if (buffer.length >= 3) {
                 return go(
                     board,
@@ -479,25 +500,27 @@ function getVerticalMatches<T>(board: Board<T>, col: number): Match<T>[] {
     return go(board, firstPosition, firstPieceType, [], []);
 }
 
-function refillEmptyPostions<T>(board: Board<T>, generator: Generator<T>): RefillEffect<T> {
-function do_refill(currentBoardState: Board<T>, currentPosition: Position, hasRefilled: boolean ): RefillEffect<T> | null{
-        if(isOutsideBoard(board, currentPosition)){
-            return hasRefilled ? {kind: "Refill" as "Refill", board: currentBoardState}: null;
+function getEmptyPositions<T>(board: Board<T>): Position[]{
+    function go(board: Board<T>, currentPosition: Position, emptyPositions: Position[]): Position[]{
+        const newPosition = currentPosition.col < board.width -1 ? {row:currentPosition.row, col:currentPosition.col+1} : {row: currentPosition.row+1, col:0}
+        if (isOutsideBoard(board, currentPosition)){
+            return emptyPositions
         }else{
-            if(piece(currentBoardState, currentPosition) === undefined){
-                let newBoardState = setPiece(currentBoardState, currentPosition, generator.next());
-                let newPosition = {} as Position;
-                if(currentPosition.col >= currentBoardState.width){
-                 newPosition = {row: currentPosition.row, col: currentPosition.col+1}
-                }
-                if(currentPosition.row >= currentBoardState.height){
-                 newPosition = {row: currentPosition.row+1, col:0}
-                }
-                return do_refill(newBoardState, newPosition, true);
+            if (piece(board, currentPosition) === undefined){
+                return go(board, newPosition, [...emptyPositions, currentPosition])
+            }else{
+                return go(board, newPosition, emptyPositions)
             }
         }
     }
-    return do_refill(board, {row: 0, col: 0}, false);
+
+    return go(board, {row: 0, col:0},  []);
+}
+
+function refillEmptyPostions<T>(board: Board<T>, generator: Generator<T>): RefillResult<T> {
+    const emptyPositions = getEmptyPositions(board);
+    const refilledBoard = emptyPositions.reduce((currentBoardState, currentEmptyPosition) => setPiece(currentBoardState, currentEmptyPosition, generator.next()), board)
+    return {board: refilledBoard, hasRefilled: emptyPositions.length > 0 }
 }
 
 function clearMatches<T>(board: Board<T>, matchesToClear: Match<T>[]): Board<T> {
@@ -564,7 +587,7 @@ function movePiecesDown<T>(board: Board<T>): Board<T> {
             return currentBoardState;
         }else{
             const newBoardState = movePiecesInColumnToButtom(currentBoardState, {row: currentBoardState.height -1, col: currentColumn});
-            return do_movePiecesDown(newBoardState, currentColumn+);
+            return do_movePiecesDown(newBoardState, currentColumn + 1);
         }
     }
     return do_movePiecesDown(board, 0);
@@ -590,16 +613,30 @@ function movePieceDown<T>(board: Board<T>, p: Position): movePiceResult<T> {
     return {board: newBoard, stateChanged: true, newPiecePosition: down};
 }
 
+
 function getAllMatches<T>(board: Board<T>): Match<T>[] {
-    let allMatches = [] as Match<T>[];
+    function collectHorizontalMatches(board: Board<T>, currentPosition: Position, allMatches: Match<T>[]): Match<T>[]{
+        if (isOutsideBoard(board, currentPosition)){
+            return allMatches;
+        }else{
+            const horizontalMatches = getHorizontalMatches(board, currentPosition.row);
+            const newPosition: Position =  {row: currentPosition.row+1, col: currentPosition.col};
+            return collectHorizontalMatches(board, newPosition, [...allMatches, ...horizontalMatches])
+        }
+    }
+    
+    function collectVerticalMatches(board: Board<T>, currentPosition: Position, allMatches: Match<T>[]): Match<T>[]{
+        if (isOutsideBoard(board, currentPosition)){
+            return allMatches;
+        }else{
+            const verticalMatches = getVerticalMatches(board, currentPosition.col);
+            const newPosition: Position =  {row: currentPosition.row, col: currentPosition.col+1};
+            return collectVerticalMatches(board, newPosition, [...allMatches, ...verticalMatches])
+        }
+    }
 
-    let verticalMatches = Array(board.width).fill(1).map((_, index) => index).reduce((result, colIndex) => {
-        return result.concat(getVerticalMatches(board, colIndex));        
-    }, allMatches);
-
-    let horizontalMatches = Array(board.width).fill(1).map((_, index) => index).reduce((result, rowIndex) => {
-        return result.concat(getHorizontalMatches(board, rowIndex));        
-    }, allMatches);
-
-    return verticalMatches.concat(horizontalMatches);
-}
+    const verticalMatches = collectVerticalMatches(board, {row: 0, col: 0}, []);
+    const horizontalMatches= collectHorizontalMatches(board, {row: 0, col: 0}, []);
+  
+    return [...horizontalMatches, ...verticalMatches]
+  }
